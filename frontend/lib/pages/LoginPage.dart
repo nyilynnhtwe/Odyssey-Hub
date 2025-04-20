@@ -10,68 +10,59 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final List<String> _scopes = const ['email'];
-
-  late GoogleSignIn _googleSignIn;
-  GoogleSignInAccount? _currentUser;
-  bool _isAuthorized = false;
+  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _googleSignIn = GoogleSignIn(
-      scopes: _scopes,
-      clientId:
-          // Your client id
-    );
-
-    // Check for existing sign-in
-    _googleSignIn.signInSilently().then((account) {
-      if (account != null) {
-        _handleAuthorizeScopes(account);
-      }
-    });
-
-    // Listen for sign-in changes
-    _googleSignIn.onCurrentUserChanged.listen((account) {
-      if (account != null) {
-        _handleAuthorizeScopes(account);
-      }
-      setState(() {
-        _currentUser = account;
-      });
-    });
+    _checkExistingSignIn();
   }
 
-  Future<void> _handleAuthorizeScopes(GoogleSignInAccount account) async {
-    bool isAuthorized = await _googleSignIn.canAccessScopes(_scopes);
-    if (!isAuthorized) {
-      isAuthorized = await _googleSignIn.requestScopes(_scopes);
-    }
-
-    setState(() {
-      _isAuthorized = isAuthorized;
-    });
-
-    if (isAuthorized) {
-      // Navigate to home page or perform post-login actions
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
-      );
+  Future<void> _checkExistingSignIn() async {
+    if (await _googleSignIn.isSignedIn()) {
+      _navigateToHome(await _googleSignIn.signInSilently());
     }
   }
 
-  Future<void> _handleGoogleSignIn() async {
+  Future<void> _handleSignIn() async {
+    setState(() => _isLoading = true);
+
     try {
-      await _googleSignIn.signIn();
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return;
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      _navigateToHome(googleUser);
     } catch (error) {
-      print('Error signing in: $error');
-      // Show error to user
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to sign in with Google')),
-      );
+      _showError(error.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _navigateToHome(GoogleSignInAccount? user) {
+    if (user == null) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => HomePage(
+              userPhoto: user.photoUrl ?? '',
+              userName: user.displayName ?? 'Anonymous',
+              userEmail: user.email ?? '',
+            ),
+      ),
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
   }
 
   @override
@@ -88,53 +79,61 @@ class _LoginPageState extends State<LoginPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text(
-              "Odyssey Hub",
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              "Your journey starts here",
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
+            const _AppTitle(),
             const SizedBox(height: 40),
-            if (_currentUser == null)
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black87,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                ),
-                onPressed: _handleGoogleSignIn,
-                icon: Image.asset('assets/google_logo.png', height: 24),
-                label: const Text(
-                  'Login with Google',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
-                ),
-              ),
-            if (_currentUser != null)
-              Column(
-                children: [
-                  CircleAvatar(
-                    backgroundImage: NetworkImage(_currentUser!.photoUrl ?? ''),
-                  ),
-                  const SizedBox(height: 10),
-                  Text('Welcome, ${_currentUser!.displayName}'),
-                  const SizedBox(height: 20),
-                  const CircularProgressIndicator(),
-                ],
-              ),
+            _isLoading
+                ? const CircularProgressIndicator()
+                : _GoogleSignInButton(onPressed: _handleSignIn),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AppTitle extends StatelessWidget {
+  const _AppTitle();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [
+        Text(
+          "Odyssey Hub",
+          style: TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+        SizedBox(height: 10),
+        Text(
+          "Your journey starts here",
+          style: TextStyle(fontSize: 16, color: Colors.grey),
+        ),
+      ],
+    );
+  }
+}
+
+class _GoogleSignInButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _GoogleSignInButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.black87,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+      ),
+      onPressed: onPressed,
+      icon: Image.asset('assets/google_logo.png', height: 24),
+      label: const Text(
+        'Login with Google',
+        style: TextStyle(color: Colors.white, fontSize: 16),
       ),
     );
   }
